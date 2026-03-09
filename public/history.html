@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transaction History - BDW</title>
+  <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="header-left">
+        <img src="/images/bdw logo.webp" alt="BDW Logo" class="logo">
+        <h1 class="site-title">Brown Design Workshop Material Circulation Station</h1>
+      </div>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/history" class="active">History</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+          <span id="themeIcon">Dark Mode</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <h2 class="card-title">Transaction History</h2>
+      
+      <!-- Filter Section -->
+      <div style="margin-bottom: 2rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="filterMaterial">Filter by Material</label>
+            <select id="filterMaterial" style="width: 100%;">
+              <option value="">All Materials</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="filterAction">Filter by Action</label>
+            <select id="filterAction" style="width: 100%;">
+              <option value="">All Actions</option>
+              <option value="check-in">Check In</option>
+              <option value="check-out">Check Out</option>
+            </select>
+          </div>
+
+          <button onclick="applyFilters()" class="btn-secondary">Apply Filters</button>
+        </div>
+      </div>
+
+      <div id="historyTableContainer">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Theme Toggle Functionality
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlElement = document.documentElement;
+
+    // Check for saved theme preference or default to 'dark'
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    htmlElement.setAttribute('data-theme', currentTheme);
+    themeIcon.textContent = currentTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = htmlElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      htmlElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeIcon.textContent = newTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+    });
+
+    let allTransactions = [];
+    let materials = [];
+
+    // Load materials for filter dropdown
+    async function loadMaterials() {
+      try {
+        const response = await fetch('/api/materials');
+        materials = await response.json();
+        
+        const select = document.getElementById('filterMaterial');
+        materials.forEach(material => {
+          const option = document.createElement('option');
+          option.value = material.name;
+          option.textContent = material.name;
+          select.appendChild(option);
+        });
+      } catch (error) {
+        console.error('Error loading materials:', error);
+      }
+    }
+
+    // Load all transactions
+    async function loadTransactions() {
+      try {
+        const response = await fetch('/api/transactions');
+        allTransactions = await response.json();
+        renderTransactions(allTransactions);
+      } catch (error) {
+        console.error('Error loading transactions:', error);
+        document.getElementById('historyTableContainer').innerHTML = 
+          '<div class="alert alert-error">Failed to load transaction history.</div>';
+      }
+    }
+
+    function renderTransactions(transactions) {
+      const container = document.getElementById('historyTableContainer');
+      
+      if (transactions.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No transactions found.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Date & Time</th>
+            <th>Material</th>
+            <th>Action</th>
+            <th>Quantity</th>
+            <th>User Name</th>
+            <th>User Email</th>
+          </tr>
+        </thead>
+        <tbody id="historyTableBody">
+        </tbody>
+      `;
+
+      const tbody = table.querySelector('#historyTableBody');
+      
+      transactions.forEach(transaction => {
+        const row = document.createElement('tr');
+        // If timestamp is already a formatted string, use it directly; otherwise parse as Date
+        let formattedDate;
+        try {
+          const date = new Date(transaction.timestamp);
+          // Check if date is valid
+          if (!isNaN(date.getTime())) {
+            formattedDate = date.toLocaleString('en-US', {
+              timeZone: 'America/New_York',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          } else {
+            // Already formatted string
+            formattedDate = transaction.timestamp;
+          }
+        } catch (e) {
+          formattedDate = transaction.timestamp;
+        }
+
+        const actionColor = transaction.action === 'check-in' ? 
+          'var(--accent-success)' : 'var(--accent-warning)';
+
+        row.innerHTML = `
+          <td>${formattedDate}</td>
+          <td><strong>${transaction.material_name}</strong></td>
+          <td style="color: ${actionColor}; font-weight: 600; text-transform: capitalize;">
+            ${transaction.action}
+          </td>
+          <td>${transaction.quantity}</td>
+          <td>${transaction.user_name}</td>
+          <td>${transaction.user_email}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      container.innerHTML = '';
+      container.appendChild(table);
+    }
+
+    window.applyFilters = function() {
+      const materialFilter = document.getElementById('filterMaterial').value;
+      const actionFilter = document.getElementById('filterAction').value;
+
+      let filtered = allTransactions;
+
+      if (materialFilter) {
+        filtered = filtered.filter(t => t.material_name === materialFilter);
+      }
+
+      if (actionFilter) {
+        filtered = filtered.filter(t => t.action === actionFilter);
+      }
+
+      renderTransactions(filtered);
+    };
+
+    // Load data on page load
+    Promise.all([loadMaterials(), loadTransactions()]);
+
+    // Refresh every 10 seconds
+    setInterval(loadTransactions, 10000);
+  </script>
+</body>
+</html>

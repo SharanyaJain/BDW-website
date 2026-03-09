@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Inventory Management - BDW</title>
+  <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="header-left">
+        <img src="/images/bdw logo.webp" alt="BDW Logo" class="logo">
+        <h1 class="site-title">Brown Design Workshop - Admin Panel</h1>
+      </div>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/history">History</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+          <span id="themeIcon">Dark Mode</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Add New Material Section -->
+    <div class="card mb-xl">
+      <h2 class="card-title">Add New Material</h2>
+      <div id="addAlertContainer"></div>
+      
+      <form id="addMaterialForm" class="form-container" style="max-width: 100%;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="newMaterialName">Material Name *</label>
+            <input type="text" id="newMaterialName" name="name" placeholder="e.g., Acrylic Sheets" required>
+          </div>
+
+          <div class="form-group">
+            <label for="newMaterialUnit">Unit of Measurement *</label>
+            <input type="text" id="newMaterialUnit" name="unit" placeholder="e.g., pieces, kg, meters" required>
+          </div>
+
+          <div class="form-group">
+            <label for="newMaterialQuantity">Initial Quantity *</label>
+            <input type="number" id="newMaterialQuantity" name="quantity" min="0" step="0.01" placeholder="e.g., 10" required>
+          </div>
+        </div>
+
+        <button type="submit" style="width: auto;">Add Material</button>
+      </form>
+    </div>
+
+    <!-- Current Inventory Section -->
+    <div class="card">
+      <h2 class="card-title">Current Inventory</h2>
+      <div id="inventoryAlertContainer"></div>
+      
+      <button onclick="downloadAllQRCodes()" class="btn" style="margin-bottom: 1.5rem;"> Download All QR Codes (PDF)</button>
+      
+      <div id="inventoryTableContainer">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Theme Toggle Functionality
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlElement = document.documentElement;
+
+    // Check for saved theme preference or default to 'dark'
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    htmlElement.setAttribute('data-theme', currentTheme);
+    themeIcon.textContent = currentTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = htmlElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      htmlElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeIcon.textContent = newTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+    });
+
+    let materials = [];
+
+    // Load materials
+    async function loadInventory() {
+      try {
+        const response = await fetch('/api/materials');
+        materials = await response.json();
+        renderInventoryTable();
+      } catch (error) {
+        console.error('Error loading inventory:', error);
+        showInventoryAlert('Failed to load inventory data.', 'error');
+      }
+    }
+
+    function renderInventoryTable() {
+      const container = document.getElementById('inventoryTableContainer');
+      
+      if (materials.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No materials in inventory.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Material Name</th>
+            <th>Unit</th>
+            <th>Current Quantity</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryTableBody">
+        </tbody>
+      `;
+
+      const tbody = table.querySelector('#inventoryTableBody');
+      
+      materials.forEach(material => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${material.name}</strong></td>
+          <td>${material.unit}</td>
+          <td>
+            <input 
+              type="number" 
+              id="qty-${material.id}" 
+              value="${material.quantity}" 
+              min="0" 
+              step="0.01" 
+              style="width: 120px; padding: 0.5rem; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary);"
+            >
+          </td>
+          <td>
+            <button 
+              onclick="updateQuantity('${material.name}', ${material.id})" 
+              class="btn-secondary" 
+              style="margin-right: 0.5rem; padding: 0.5rem 1rem;">
+              Update
+            </button>
+            <button 
+              onclick="downloadQRCode('${material.name}')" 
+              class="btn-secondary" 
+              style="margin-right: 0.5rem; padding: 0.5rem 1rem;">
+               QR
+            </button>
+            <button 
+              onclick="deleteMaterial('${material.name}')" 
+              style="background-color: var(--accent-error); padding: 0.5rem 1rem;">
+              Delete
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      container.innerHTML = '';
+      container.appendChild(table);
+    }
+
+    function showAddAlert(message, type = 'success') {
+      const container = document.getElementById('addAlertContainer');
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type}`;
+      alert.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(alert);
+      
+      setTimeout(() => {
+        alert.remove();
+      }, 5000);
+    }
+
+    function showInventoryAlert(message, type = 'success') {
+      const container = document.getElementById('inventoryAlertContainer');
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type}`;
+      alert.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(alert);
+      
+      setTimeout(() => {
+        alert.remove();
+      }, 5000);
+    }
+
+    // Add new material
+    document.getElementById('addMaterialForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData(e.target);
+      const data = {
+        name: formData.get('name'),
+        unit: formData.get('unit'),
+        quantity: parseFloat(formData.get('quantity'))
+      };
+
+      try {
+        const response = await fetch('/api/materials', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to add material');
+        }
+
+        showAddAlert(`Successfully added ${data.name}!`, 'success');
+        e.target.reset();
+        await loadInventory();
+
+      } catch (error) {
+        console.error('Error adding material:', error);
+        showAddAlert(error.message, 'error');
+      }
+    });
+
+    // Update material quantity
+    window.updateQuantity = async function(materialName, materialId) {
+      const input = document.getElementById(`qty-${materialId}`);
+      const newQuantity = parseFloat(input.value);
+
+      if (isNaN(newQuantity) || newQuantity < 0) {
+        showInventoryAlert('Invalid quantity value.', 'error');
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/materials/${encodeURIComponent(materialName)}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ quantity: newQuantity })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to update quantity');
+        }
+
+        showInventoryAlert(`Updated ${materialName} quantity to ${newQuantity}!`, 'success');
+        await loadInventory();
+
+      } catch (error) {
+        console.error('Error updating quantity:', error);
+        showInventoryAlert(error.message, 'error');
+      }
+    };
+
+    // Delete material
+    window.deleteMaterial = async function(materialName) {
+      if (!confirm(`Are you sure you want to delete "${materialName}"? This action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/materials/${encodeURIComponent(materialName)}`, {
+          method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to delete material');
+        }
+
+        showInventoryAlert(`Deleted ${materialName} successfully!`, 'success');
+        await loadInventory();
+
+      } catch (error) {
+        console.error('Error deleting material:', error);
+        showInventoryAlert(error.message, 'error');
+      }
+    };
+
+    // Download individual QR code
+    window.downloadQRCode = async function(materialName) {
+      try {
+        const response = await fetch(`/api/qr/${encodeURIComponent(materialName)}/download`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate QR code');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `QR_${materialName.replace(/\s+/g, '_')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showInventoryAlert(`QR code for ${materialName} downloaded!`, 'success');
+      } catch (error) {
+        console.error('Error downloading QR code:', error);
+        showInventoryAlert(error.message, 'error');
+      }
+    };
+
+    // Download all QR codes as PDF
+    window.downloadAllQRCodes = async function() {
+      try {
+        const response = await fetch('/api/qr/all/pdf');
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate PDF');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'BDW_Material_QR_Codes.pdf';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showInventoryAlert('PDF with all QR codes downloaded!', 'success');
+      } catch (error) {
+        console.error('Error downloading PDF:', error);
+        showInventoryAlert(error.message, 'error');
+      }
+    };
+
+    // Load inventory on page load
+    loadInventory();
+
+    // Refresh every 30 seconds
+    setInterval(loadInventory, 30000);
+  </script>
+</body>
+</html>

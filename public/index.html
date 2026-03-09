@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brown Design Workshop - Material Circulation</title>
+  <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="header-left">
+        <img src="/images/bdw logo.webp" alt="BDW Logo" class="logo">
+        <h1 class="site-title">Brown Design Workshop Material Circulation Station</h1>
+      </div>
+      <nav>
+        <a href="/" class="active">Home</a>
+        <a href="/history">History</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+          <span id="themeIcon">Dark Mode</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="welcome-card card">
+      <h2 class="card-title">Welcome to BDW<br>Material Circulation Station!</h2>
+      <div class="card-content">
+        <p>To check in or check out any material, scan the QR code or click the icons below and enter the amount of material!</p>
+      </div>
+    </div>
+
+    <div class="materials-grid" id="materialsGrid">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script>
+    // Theme Toggle Functionality
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlElement = document.documentElement;
+
+    // Check for saved theme preference or default to 'dark'
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    htmlElement.setAttribute('data-theme', currentTheme);
+    themeIcon.textContent = currentTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = htmlElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      htmlElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeIcon.textContent = newTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+    });
+
+    // Load materials and create cards
+    async function loadMaterials() {
+      try {
+        const response = await fetch('/api/materials');
+        const materials = await response.json();
+        
+        const grid = document.getElementById('materialsGrid');
+        grid.innerHTML = '';
+        
+        materials.forEach(material => {
+          const card = document.createElement('a');
+          card.href = `/material/${encodeURIComponent(material.name)}`;
+          card.className = 'material-card card';
+          
+          //EMOJIS - KEEP OR DELETE
+
+          // Get icon based on material name
+          let icon = '🛠️';
+          if (material.name.toLowerCase().includes('wood')) icon = '🪵';
+          else if (material.name.toLowerCase().includes('cable') || material.name.toLowerCase().includes('pvc')) icon = '🪢';
+          else if (material.name.toLowerCase().includes('filament') || material.name.toLowerCase().includes('3d')) icon = '🧵';
+            else if (material.name.toLowerCase().includes('paint')) icon = '🎨';
+            else if (material.name.toLowerCase().includes('metal')) icon = '⚙️';
+             else if (material.name.toLowerCase().includes('bolt')) icon = '🔩';
+          
+          // Determine availability status
+          let status = 'available';
+          if (material.quantity <= 1) status = 'out';
+          else if (material.quantity < 5) status = 'low';
+          
+          card.innerHTML = `
+            <div class="material-icon">${icon}</div>
+            <h3 class="card-title">${material.name}</h3>
+            <div class="availability-badge ${status}">
+              ${material.quantity} ${material.unit} available
+            </div>
+          `;
+          
+          grid.appendChild(card);
+        });
+      } catch (error) {
+        console.error('Error loading materials:', error);
+        document.getElementById('materialsGrid').innerHTML = 
+          '<div class="alert alert-error">Failed to load materials. Please refresh the page.</div>';
+      }
+    }
+
+    // Load materials on page load
+    loadMaterials();
+
+    // Refresh materials every 10 seconds
+    setInterval(loadMaterials, 10000);
+  </script>
+</body>
+</html>

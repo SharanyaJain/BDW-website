@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Material Check In/Out - BDW</title>
+  <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="header-left">
+        <img src="/images/bdw logo.webp" alt="BDW Logo" class="logo">
+        <h1 class="site-title">Brown Design Workshop Material Circulation Station</h1>
+      </div>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/history">History</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+          <span id="themeIcon">Dark Mode</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card form-container">
+      <h2 class="card-title" id="materialTitle">Loading...</h2>
+      
+      <div class="availability-badge available" id="availabilityBadge">
+        Loading...
+      </div>
+
+      <div id="alertContainer"></div>
+
+      <form id="checkInOutForm">
+        <div class="form-group">
+          <label for="action">Action *</label>
+          <select id="action" name="action" required>
+            <option value="">Select an action</option>
+            <option value="check-in">Check In</option>
+            <option value="check-out">Check Out</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="userName">Your Name *</label>
+          <input type="text" id="userName" name="userName" placeholder="Enter your name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="userEmail">Your Email *</label>
+          <input type="email" id="userEmail" name="userEmail" placeholder="your.email@brown.edu" required>
+        </div>
+
+        <div class="form-group">
+          <label for="quantity">Quantity (<span id="unitLabel">units</span>) *</label>
+          <input type="number" id="quantity" name="quantity" min="0.01" step="0.01" placeholder="Enter quantity" required>
+          <small style="color: var(--text-muted); margin-top: 0.5rem; display: block;">
+            Available: <span id="availableQuantity">0</span> <span id="unitLabel2">units</span>
+          </small>
+        </div>
+
+        <button type="submit" id="submitBtn">Submit</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Theme Toggle Functionality
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlElement = document.documentElement;
+
+    // Check for saved theme preference or default to 'dark'
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    htmlElement.setAttribute('data-theme', currentTheme);
+    themeIcon.textContent = currentTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = htmlElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      htmlElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeIcon.textContent = newTheme === 'dark' ? 'Dark Mode' : 'Light Mode';
+    });
+
+    let currentMaterial = null;
+    let materialName = '';
+
+    // Get material name from URL
+    const pathParts = window.location.pathname.split('/');
+    materialName = decodeURIComponent(pathParts[pathParts.length - 1]);
+
+    // Load material data
+    async function loadMaterial() {
+      try {
+        const response = await fetch(`/api/materials/${encodeURIComponent(materialName)}`);
+        if (!response.ok) {
+          throw new Error('Material not found');
+        }
+        
+        currentMaterial = await response.json();
+        updateUI();
+      } catch (error) {
+        console.error('Error loading material:', error);
+        showAlert('Failed to load material data. Redirecting to home...', 'error');
+        setTimeout(() => window.location.href = '/', 2000);
+      }
+    }
+
+    function updateUI() {
+      if (!currentMaterial) return;
+
+      document.getElementById('materialTitle').textContent = currentMaterial.name;
+      document.getElementById('unitLabel').textContent = currentMaterial.unit;
+      document.getElementById('unitLabel2').textContent = currentMaterial.unit;
+      document.getElementById('availableQuantity').textContent = currentMaterial.quantity;
+
+      // Update availability badge
+      const badge = document.getElementById('availabilityBadge');
+      let status = 'available';
+      if (currentMaterial.quantity <= 1) status = 'out';
+      else if (currentMaterial.quantity < 5) status = 'low';
+      
+      badge.className = `availability-badge ${status}`;
+      badge.textContent = `${currentMaterial.quantity} ${currentMaterial.unit} available`;
+    }
+
+    function showAlert(message, type = 'success') {
+      const container = document.getElementById('alertContainer');
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type}`;
+      alert.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(alert);
+      
+      setTimeout(() => {
+        alert.remove();
+      }, 5000);
+    }
+
+    // Handle form submission
+    document.getElementById('checkInOutForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData(e.target);
+      const data = {
+        materialName: currentMaterial.name,
+        userName: formData.get('userName'),
+        userEmail: formData.get('userEmail'),
+        action: formData.get('action'),
+        quantity: parseFloat(formData.get('quantity'))
+      };
+
+      // Validate quantity for check-out
+      if (data.action === 'check-out' && data.quantity > currentMaterial.quantity) {
+        showAlert(`Cannot check out ${data.quantity} ${currentMaterial.unit}. Only ${currentMaterial.quantity} available.`, 'error');
+        return;
+      }
+
+      // Disable submit button
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+
+      try {
+        const response = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Transaction failed');
+        }
+
+        showAlert(
+          `Successfully ${data.action === 'check-in' ? 'checked in' : 'checked out'} ${data.quantity} ${currentMaterial.unit}!`,
+          'success'
+        );
+
+        // Reset form
+        e.target.reset();
+
+        // Reload material data
+        await loadMaterial();
+
+      } catch (error) {
+        console.error('Error submitting transaction:', error);
+        showAlert(error.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+      }
+    });
+
+    // Validate quantity input
+    document.getElementById('quantity').addEventListener('input', (e) => {
+      const action = document.getElementById('action').value;
+      const quantity = parseFloat(e.target.value);
+      
+      if (action === 'check-out' && quantity > currentMaterial.quantity) {
+        e.target.setCustomValidity(`Maximum available: ${currentMaterial.quantity}`);
+      } else {
+        e.target.setCustomValidity('');
+      }
+    });
+
+    // Load material on page load
+    loadMaterial();
+
+    // Refresh material data every 10 seconds
+    setInterval(loadMaterial, 10000);
+  </script>
+</body>
+</html>
